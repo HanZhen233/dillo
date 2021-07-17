@@ -8,6 +8,7 @@
 Makefile
 
 *.[ao]
+*.Po
 #/dpi
 *.dpi
 #/dpid
@@ -19,9 +20,12 @@ dillo
 #/test 
 /test/*
 !/test/*.*
+*.[ao]
+*.Po
 
 #/
-config.status
-stamp-h1
-config.log
-config.status
+/config.status
+/stamp-h1
+/config.log
+/config.status
+/.config.h
