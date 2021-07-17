@@ -1,0 +1,27 @@
+!*.c
+!*.h
+!*.cc
+!*.hh
+!*.am
+!*.in
+# using am and in file 
+Makefile
+
+*.[ao]
+#/dpi
+*.dpi
+#/dpid
+dpid
+dpic
+#/src
+dillo
+
+#/test 
+/test/*
+!/test/*.*
+
+#/
+config.status
+stamp-h1
+config.log
+config.status
