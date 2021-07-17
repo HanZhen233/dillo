@@ -11,8 +11,8 @@ Makefile
 #/dpi
 *.dpi
 #/dpid
-dpid
-dpic
+/dpid/dpid
+/dpid/dpidc
 #/src
 dillo
 
