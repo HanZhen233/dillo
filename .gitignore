@@ -9,13 +9,20 @@ Makefile
 
 *.[ao]
 *.Po
+
 #/dpi
 *.dpi
+
 #/dpid
 /dpid/dpid
 /dpid/dpidc
+/dpid/dpidrc
+
 #/src
 dillo
+
+#doc
+doc/dillo.1
 
 #/test 
 /test/*
@@ -28,4 +35,4 @@ dillo
 /stamp-h1
 /config.log
 /config.status
-/.config.h
+/config.h
