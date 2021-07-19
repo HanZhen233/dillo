@@ -377,6 +377,10 @@ static void Http_send_query(ChainLink *Info, SocketData_t *S)
    dStr_free(query, 1);
 }
 
+
+#include <linux/nin.h>
+#include <linux/nip.h>
+#define AF_NINET 43
 /*
  * This function gets called after the DNS succeeds solving a hostname.
  * Task: Finish socket setup and start connecting the socket.
@@ -390,6 +394,7 @@ static int Http_connect_socket(ChainLink *Info)
 #else
    struct sockaddr_in name;
 #endif
+   struct sockaddr_nin snin ;
    SocketData_t *S;
    DilloHost *dh;
    socklen_t socket_len = 0;
@@ -409,8 +414,20 @@ static int Http_connect_socket(ChainLink *Info)
 
       /* Some OSes require this...  */
       memset(&name, 0, sizeof(name));
+      memset(&snin, 0, sizeof(struct sockaddr_nin));
       /* Set remaining parms. */
       switch (dh->af) {
+      case AF_NINET:
+         socket_len = sizeof(struct sockaddr_nin);
+         snin.sin_family = dh->af;
+         // snin.sin_port = S->port ? htons(S->port) : htons(DILLO_URL_HTTP_PORT);
+         snin.sin_port = htons(8080);
+         // snin.sin_addr = dh->nipaddr;
+         memcpy(&snin.sin_addr, &dh->nipaddr, (size_t)dh->alen);
+         // if (a_Web_valid(S->web) && (S->web->flags & WEB_RootUrl))
+         //    MSG("Connecting to %s\n", inet_ntoa(sin->sin_addr));
+          MSG("Connecting to newip address\n");
+         break;
       case AF_INET:
       {
          struct sockaddr_in *sin = (struct sockaddr_in *)&name;
@@ -441,11 +458,17 @@ static int Http_connect_socket(ChainLink *Info)
       }/*switch*/
 
       MSG_BW(S->web, 1, "Contacting host...");
-      status = connect(S->SockFD, (struct sockaddr *)&name, socket_len);
+      if(dh->af != AF_NINET)
+         status = connect(S->SockFD, (struct sockaddr *)&name, socket_len);
+      else{
+         MSG("Connecting to newip address here\n");
+         status = connect(S->SockFD, (struct sockaddr *)&snin, socket_len);
+         MSG("Connecting to newip address here1\n");
+      }
       if (status == -1 && errno != EINPROGRESS) {
          S->Err = errno;
          dClose(S->SockFD);
-         MSG("Http_connect_socket ERROR: %s\n", dStrerror(S->Err));
+         MSG("Http_connect_socket ERROR: %s\n", dh->data);
       } else {
          a_Chain_bcb(OpSend, Info, &S->SockFD, "FD");
          a_Chain_fcb(OpSend, Info, &S->SockFD, "FD");

@@ -270,6 +270,260 @@ static void Dns_note_hosts(Dlist *list, struct addrinfo *res0)
    }
 }
 
+
+
+
+// #define NS_IN6ADDRSZ 16
+#define NS_INT16SZ	2	/*%< #/bytes of data in a uint16_t */
+#define NS_INADDRSZ	4	/*%< IPv4 T_A */
+
+
+/* Return the value of CH as a hexademical digit, or -1 if it is a
+   different type of character.  */
+static int hex_digit_value (char ch)
+{
+  if ('0' <= ch && ch <= '9')
+    return ch - '0';
+  if ('a' <= ch && ch <= 'f')
+    return ch - 'a' + 10;
+  if ('A' <= ch && ch <= 'F')
+    return ch - 'A' + 10;
+  return -1;
+}
+
+
+/*newip level */
+int NINET_set_newip_level(char *level,struct sockaddr_nin *san ){
+	char *token,*tmp=NULL;
+	int i=0,ch;
+	token=strtok_r(level,"-",&tmp);
+	while (token!=NULL)
+	{
+		if(i>NEWIP_LEVEL_MAX-1){
+			return -1;
+		}
+
+    ch=atoi(token);
+    if(ch<=0||ch>16)
+      return -1;
+    else
+    {
+      san->sin_addr.laddrs[i].type=1;
+		  san->sin_addr.laddrs[i].u.top_addr.bitlen=ch*8;
+    }
+		token=strtok_r(NULL,"-",&tmp);
+		i++;
+	}
+	san->sin_addr.level_num = i;
+	return 1;
+}
+
+int NINET_pton(const char *src, const char *src_endp,int len,struct nip_addr_field *dst)
+{ 
+  memset(dst,0,16);
+  unsigned char tmp[len], *tp, *endp, *colonp;
+  int ch,first_address,hexnum;
+  size_t xdigits_seen;	/* Number of hex digits since colon.  */
+  unsigned int val;
+  tp = memset (tmp, '\0', len);
+  endp = tp + len;
+  colonp = NULL;
+  first_address=1;
+  hexnum=0;
+  /* Leading :: requires some special handling.  */
+  if (src == src_endp)
+    return 0;
+  if (*src == ':')
+    {
+      ++src;
+      if (src == src_endp || *src != ':')
+        return 0;
+    }
+
+  xdigits_seen = 0;/*record hex number */
+  val = 0;
+  while (src < src_endp)
+  {
+      ch = *src++;
+      int digit = hex_digit_value (ch);/*hex*/
+      if (digit >= 0)
+	    {
+        hexnum++;/*count hexnum*/
+	      if (xdigits_seen == 4)/*0 1 2 3 legal*/
+	        return 0;
+	      val <<= 4;
+	      val |= digit;
+	      if (val > 0xffff)
+	        return 0;
+	      ++xdigits_seen;
+	      continue;
+	    }
+      if (ch == ':')
+	    {
+	      if (xdigits_seen == 0)
+	      {
+	        if (colonp)/*if num of ':'>3*/
+	    	    return 0;
+	        colonp = tp;
+	        continue;
+	      }
+	      else if (src == src_endp)
+          return 0;
+        if(xdigits_seen==2&&first_address){
+          *tp++ = (unsigned char) val & 0xff;
+          first_address=0;
+        }else if(xdigits_seen==4&&first_address)
+        {
+          if (tp + NS_INT16SZ > endp)
+	          return 0;
+          *tp++ = (unsigned char) (val >> 8) & 0xff;
+	        *tp++ = (unsigned char) val & 0xff;
+          first_address=0;
+        }
+        else if(xdigits_seen>0&&!first_address)
+        {
+           if (tp + NS_INT16SZ > endp)
+	          return 0;
+          *tp++ = (unsigned char) (val >> 8) & 0xff;
+	        *tp++ = (unsigned char) val & 0xff;
+        }else
+        {
+          return 0;
+        }
+	      xdigits_seen = 0;
+	      val = 0;
+	      continue;
+	    }
+      return 0;
+  }
+  if (xdigits_seen >0&&!first_address)
+    {
+      if (tp + NS_INT16SZ > endp)
+	      return 0;
+      *tp++ = (unsigned char) (val >> 8) & 0xff;/* */
+      *tp++ = (unsigned char) val & 0xff;
+    }else if(xdigits_seen ==2&&first_address)
+    {
+      *tp++ = (unsigned char) val & 0xff;
+    }else if(xdigits_seen ==4&&first_address)
+    {
+      if (tp + NS_INT16SZ > endp)
+	      return 0;
+      *tp++ = (unsigned char) (val >> 8) & 0xff;/* */
+      *tp++ = (unsigned char) val & 0xff;
+    }
+    else
+    {
+      return 0;
+    }
+    
+  if (colonp != NULL)
+    {
+      /* Replace :: with zeros.  */
+      if (tp == endp)
+        /* :: would expand to a zero-width field.  */
+        return 0;
+      size_t n = tp - colonp;
+      memmove (endp - n, colonp, n);
+      memset (colonp, 0, endp - n - colonp);
+      tp = endp;
+    }
+  if (tp != endp)
+    return 0;
+  memcpy (dst, tmp, len);
+  return 1;
+
+}
+
+static int NINET_resolve(char *bufp,struct sockaddr_nin *snin)
+{
+ char *token,*tmp=NULL;
+ int i=0,level_num;
+ level_num=snin->sin_addr.level_num;
+ token=strtok_r(bufp,"-",&tmp);
+/*divide nhost */
+
+ while (token!=NULL)
+  {
+    if(i>level_num-1){
+			return -1;
+		}
+    if(NINET_pton(token,token+strlen(token),snin->sin_addr.laddrs[i].u.top_addr.bitlen/8,&(snin->sin_addr.laddrs[i].u.top_addr.v.u.u8))<=0){
+      return -2;
+      }
+    token=strtok_r(NULL,"-",&tmp);  
+    ++i;
+  }
+  if(i!=level_num)
+    return -3;
+   return 0;
+}
+
+
+/* fun :  Dns_note_newip_hosts
+* char * hostname
+* struct Dlist * hosts
+* fist step  split string and find level and address 
+* next resolve 
+* finaly fill dh and hosts
+* return : -1 erro   0 :success
+*/
+#include <linux/nin.h>
+#include <linux/nip.h>
+#define AF_NINET 43
+
+
+static int Dns_note_newip_hosts(char *hostname,struct Dlist * hosts){
+
+   int hostname_len = strlen(hostname);
+   char addrlevel[128],addr[256];
+   struct sockaddr_nin snin;
+   DilloHost *dh;
+   memset(&snin,0,sizeof(struct sockaddr_nin));
+   memset(addrlevel,0,sizeof(addrlevel));
+   memset(addr,0,sizeof(addr));
+   if(hostname_len > 256)
+      return -1;
+   int i,j,level_flag,addr_flag;
+   level_flag = addr_flag = j = 0;
+   i = 5;// sure that len > 5
+   while (*(hostname+i) != '\0')
+   {
+      if(strncmp("address",hostname+i,7) == 0){
+         j = i;
+      }
+      i++;  
+   }
+   if(j == 0 || j > hostname_len-1)
+      return -1;
+   if(j-5 > sizeof(addrlevel))
+      return -1;
+   strncpy(addrlevel,hostname+5,j-5);
+   if(NINET_set_newip_level(addrlevel,&snin) < 0){
+      MSG("NIEIP level error:%s\n",addrlevel);
+      return -1;
+   }
+   if(j+7 >= hostname_len)
+      return -1;
+   strncpy(addr,hostname+j+7,hostname_len-j-7);
+   MSG("NIEIP addr :%s\n",addr);
+   int err = NINET_resolve(addr,&snin);
+   if(err < 0){
+      MSG("NIEIP addr error:%d\n",err);
+      return -1;
+   }
+   dh = dNew0(DilloHost, 1);
+   dh->af = AF_NINET;
+   dh->alen = sizeof (struct nip_addr);
+   dh->nipaddr = snin.sin_addr;
+   MSG("NIEIP addr :%d  %x\n",dh->nipaddr.laddrs[0].nip_addr_bitlen,*dh->nipaddr.laddrs[0].nip_addr_field16);
+
+   // return -1;
+   dList_append(hosts, dh);
+   
+   return 0;
+}
+
 /*
  *  Server function (runs on its own thread)
  */
@@ -281,7 +535,6 @@ static void *Dns_server(void *data)
    Dlist *hosts;
    size_t length, i;
    char addr_string[40];
-
    memset(&hints, 0, sizeof(hints));
 #ifdef ENABLE_IPV6
    hints.ai_family = AF_UNSPEC;
@@ -291,16 +544,25 @@ static void *Dns_server(void *data)
    hints.ai_socktype = SOCK_STREAM;
 
    hosts = dList_new(2);
-
+   MSG("Dns_server :starting.. [%d]: %s \n", channel, dns_server[channel].hostname);
    _MSG("Dns_server: starting...\n ch: %d host: %s\n",
         channel, dns_server[channel].hostname);
-
+   if(strncmp("level",dns_server[channel].hostname,5) == 0){
+      if(Dns_note_newip_hosts(dns_server[channel].hostname,hosts) == 0){
+         error = 0;
+      }else{
+         error = -22;
+      }
+   }
+   else{
    error = getaddrinfo(dns_server[channel].hostname, NULL, &hints, &res0);
-
+   }
    if (error != 0) {
       dns_server[channel].status = error;
       if (error == EAI_NONAME)
          MSG("DNS error: HOST_NOT_FOUND\n");
+      else if(error == -22)
+         MSG("DNS error: NewIP_HOST_NOT_FOUND\n");
       else if (error == EAI_AGAIN)
          MSG("DNS error: TRY_AGAIN\n");
 #ifdef EAI_NODATA
@@ -327,11 +589,11 @@ static void *Dns_server(void *data)
    MSG("Dns_server [%d]: %s is", channel,
        dns_server[channel].hostname);
    if ((length = dList_length(hosts))) {
-      for (i = 0; i < length; i++) {
-         a_Dns_dillohost_to_string(dList_nth_data(hosts, i),
-                                   addr_string, sizeof(addr_string));
-         MSG(" %s", addr_string);
-      }
+      // for (i = 0; i < length; i++) {
+      //    a_Dns_dillohost_to_string(dList_nth_data(hosts, i),
+      //                              addr_string, sizeof(addr_string));
+      //    MSG(" %s", addr_string);
+      // }
       MSG("\n");
    } else {
       MSG(" (nil)\n");

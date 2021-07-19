@@ -2,7 +2,8 @@
 #define __DNS_H__
 
 #include <netinet/in.h>
-
+#include <linux/nin.h>
+#include <linux/nip.h>
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -24,6 +25,8 @@ typedef struct {
   int af;
   int alen;
   char data[DILLO_ADDR_MAX];
+  struct nip_addr nipaddr;
+  __be16 port;
 } DilloHost;
 
 void a_Dns_dillohost_to_string(DilloHost *host, char *dst, size_t size);
